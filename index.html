@@ -1,0 +1,388 @@
+<!doctype html>
+<html lang="he" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#F5C21B">
+<link rel="manifest" href="./manifest.json">
+<link rel="apple-touch-icon" href="./icon-192.png">
+<link rel="icon" href="./icon-192.png" type="image/png">
+<title>יומן שיעורי נהיגה</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;700;800&family=Assistant:wght@400;600;700&display=swap">
+<style>
+/* Layout: one narrow column, sticky tab bar; dashboard leads with a license-plate counter */
+:root{
+  --bg:#EDF0F3; --surface:#FFFFFF; --ink:#1A2027; --muted:#5D6772; --line:#D3D9E0;
+  --plate:#F5C21B; --plate-ink:#14181D; --il:#1F4FB8;
+  --ok:#1C8550; --ok-bg:#E2F3EA; --warn:#B9450F; --warn-bg:#FBEADF; --plan:#2C62C9; --plan-bg:#E3ECFB;
+  --display:"Rubik",system-ui,sans-serif; --body:"Assistant",system-ui,sans-serif;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --bg:#11151A; --surface:#1A2028; --ink:#E7EBEF; --muted:#94A0AC; --line:#2B333D;
+  --plate:#EDBB1E; --plate-ink:#14181D; --il:#3C6FD8;
+  --ok:#43BE80; --ok-bg:#163326; --warn:#F08A55; --warn-bg:#3A2117; --plan:#77A3F2; --plan-bg:#1B2A45; color-scheme:dark}}
+:root[data-theme="dark"]{
+  --bg:#11151A; --surface:#1A2028; --ink:#E7EBEF; --muted:#94A0AC; --line:#2B333D;
+  --plate:#EDBB1E; --plate-ink:#14181D; --il:#3C6FD8;
+  --ok:#43BE80; --ok-bg:#163326; --warn:#F08A55; --warn-bg:#3A2117; --plan:#77A3F2; --plan-bg:#1B2A45; color-scheme:dark}
+*{box-sizing:border-box}
+body{background:var(--bg);color:var(--ink);font-family:var(--body);font-size:16px;line-height:1.45;direction:rtl}
+body::before{content:"";position:fixed;inset:0 0 auto;height:env(safe-area-inset-top,0px);z-index:10;background:var(--bg)}
+.wrap{max-width:560px;margin:0 auto;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:12px 110px}
+h1,h2,h3{font-family:var(--display);text-wrap:balance;margin:0}
+.num{font-variant-numeric:tabular-nums}
+header.top{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-block:8px 14px}
+header.top h1{font-size:1.35rem;font-weight:800}
+.sync{font-size:.8rem;color:var(--muted)}
+nav.tabs{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:var(--bg);display:grid;grid-template-columns:repeat(3,1fr);gap:6px;padding-block:6px 10px}
+nav.tabs button{font:600 .98rem var(--body);border:1px solid var(--line);background:var(--surface);color:var(--ink);border-radius:999px;padding:9px 6px;cursor:pointer}
+nav.tabs button[aria-selected="true"]{background:var(--ink);color:var(--bg);border-color:var(--ink)}
+button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid var(--plan);outline-offset:2px}
+section.view{display:grid;gap:14px}
+[hidden]{display:none!important}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:14px;padding:16px}
+.label{font-size:.78rem;letter-spacing:.04em;color:var(--muted);font-weight:700}
+
+/* plate */
+.plate-wrap{display:grid;gap:10px;justify-items:center;padding-block:10px 4px}
+.plate{direction:ltr;display:flex;align-items:stretch;background:var(--plate);color:var(--plate-ink);border:3px solid var(--plate-ink);border-radius:9px;overflow:hidden;box-shadow:0 2px 0 rgba(0,0,0,.18)}
+.plate .il{background:var(--il);color:#fff;font:700 .72rem var(--display);display:grid;place-items:center;padding:0 8px;line-height:1.1;text-align:center}
+.plate .digits{font:800 clamp(2.6rem,13vw,3.6rem)/1 var(--display);padding:10px 18px 8px;letter-spacing:.04em;font-variant-numeric:tabular-nums}
+.plate .digits small{font-size:.45em;font-weight:700;opacity:.7}
+.plate-sub{color:var(--muted);font-weight:600;text-align:center}
+
+.strip{display:grid;grid-template-columns:repeat(auto-fill,minmax(14px,1fr));gap:4px;direction:rtl}
+.cell{height:22px;border-radius:4px;border:1.5px solid var(--line);background:transparent}
+.cell.done{background:var(--ink);border-color:var(--ink)}
+.cell.plan{border-color:var(--plan);background:var(--plan-bg)}
+.legend{display:flex;flex-wrap:wrap;gap:12px;font-size:.82rem;color:var(--muted);margin-top:10px}
+.legend i{display:inline-block;width:11px;height:11px;border-radius:3px;vertical-align:-1px;margin-inline-end:5px;border:1.5px solid var(--line)}
+
+.stats{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat{background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:12px 14px;display:grid;gap:2px;min-width:0}
+.stat b{font:700 1.45rem var(--display);font-variant-numeric:tabular-nums}
+.stat span{font-size:.85rem;color:var(--muted)}
+.stat.owed b{color:var(--warn)}
+.stat.good b{color:var(--ok)}
+
+.next{display:flex;gap:14px;align-items:center}
+.cal{flex:none;width:64px;border:2px solid var(--ink);border-radius:10px;overflow:hidden;text-align:center;font-family:var(--display)}
+.cal .m{background:var(--ink);color:var(--bg);font-size:.75rem;font-weight:700;padding:2px 0}
+.cal .d{font-size:1.7rem;font-weight:800;line-height:1.3}
+.next .info{display:grid;gap:2px;min-width:0}
+.next .info h3{font-size:1.1rem}
+.muted{color:var(--muted)}
+
+.tests{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.test{border-radius:12px;padding:12px 14px;border:1.5px dashed var(--line);display:grid;gap:4px;background:var(--surface)}
+.test.set{border-style:solid;border-color:var(--plan)}
+.test.passed{border-style:solid;border-color:var(--ok);background:var(--ok-bg)}
+.test.failed{border-style:solid;border-color:var(--warn);background:var(--warn-bg)}
+.test h3{font-size:1rem}
+.test .when{font:700 1.05rem var(--display);font-variant-numeric:tabular-nums}
+
+/* list */
+.list{display:grid;gap:8px}
+.row{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;background:var(--surface);border:1px solid var(--line);border-radius:12px;padding:10px 12px;cursor:pointer;text-align:start;font:inherit;color:inherit;width:100%}
+.row .no{font:800 1.05rem var(--display);min-width:54px;text-align:center;font-variant-numeric:tabular-nums;border-left:1px solid var(--line);padding-left:10px}
+.row .mid{display:grid;gap:3px;min-width:0}
+.row .date{font-weight:700;font-variant-numeric:tabular-nums}
+.chips{display:flex;flex-wrap:wrap;gap:5px}
+.chip{font-size:.76rem;font-weight:700;padding:2px 8px;border-radius:999px;background:var(--bg);color:var(--muted)}
+.chip.ok{background:var(--ok-bg);color:var(--ok)}
+.chip.warn{background:var(--warn-bg);color:var(--warn)}
+.chip.plan{background:var(--plan-bg);color:var(--plan)}
+.row.test-row{border-style:dashed;border-color:var(--plan)}
+.row.test-row .no{font-size:.85rem}
+.price{font:700 1rem var(--display);font-variant-numeric:tabular-nums}
+.month{font:700 .85rem var(--display);color:var(--muted);padding:8px 2px 0}
+.empty{text-align:center;padding:28px 16px;color:var(--muted)}
+
+.fab{position:fixed;left:max(16px,calc(env(safe-area-inset-left,0px) + 16px));bottom:calc(env(safe-area-inset-bottom,0px) + 18px);z-index:6;font:700 1rem var(--display);background:var(--plate);color:var(--plate-ink);border:2.5px solid var(--plate-ink);border-radius:999px;padding:13px 20px;cursor:pointer;box-shadow:0 4px 14px rgba(0,0,0,.2)}
+
+/* sheet */
+.overlay{position:fixed;inset:0;z-index:20;background:rgba(10,14,20,.45);display:flex;align-items:flex-end;justify-content:center}
+.sheet{background:var(--surface);width:100%;max-width:560px;border-radius:18px 18px 0 0;padding:18px max(16px,env(safe-area-inset-right,0px)) calc(env(safe-area-inset-bottom,0px) + 18px) max(16px,env(safe-area-inset-left,0px));display:grid;gap:14px;max-height:92vh;overflow:auto}
+.sheet h2{font-size:1.2rem}
+.field{display:grid;gap:5px}
+.field label,.field .lbl{font-weight:700;font-size:.9rem}
+input[type=date],input[type=time],input[type=number],select{font:inherit;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);width:100%;min-width:0}
+textarea{font:.8rem ui-monospace,Menlo,monospace;direction:ltr;padding:10px 12px;border:1.5px solid var(--line);border-radius:10px;background:var(--bg);color:var(--ink);width:100%;min-width:0;resize:vertical}
+.warn-card{border-color:var(--warn)}
+.two{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.seg{display:grid;grid-template-columns:1fr 1fr;border:1.5px solid var(--line);border-radius:12px;overflow:hidden}
+.seg button{font:600 .95rem var(--body);padding:11px 6px;border:0;background:var(--bg);color:var(--ink);cursor:pointer;display:grid;gap:1px}
+.seg button small{font-weight:400;color:var(--muted)}
+.seg button[aria-pressed="true"]{background:var(--ink);color:var(--bg)}
+.seg button[aria-pressed="true"] small{color:var(--bg);opacity:.75}
+.seg.three{grid-template-columns:repeat(3,1fr)}
+.toggles{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.tg{display:flex;align-items:center;gap:10px;border:1.5px solid var(--line);border-radius:12px;padding:11px 12px;font-weight:700;cursor:pointer}
+.tg input{width:20px;height:20px;accent-color:var(--ok)}
+.actions{display:flex;gap:10px;flex-wrap:wrap}
+.btn{font:700 1rem var(--display);padding:12px 18px;border-radius:12px;border:1.5px solid var(--ink);background:var(--ink);color:var(--bg);cursor:pointer;flex:1}
+.btn.ghost{background:transparent;color:var(--ink)}
+.btn.danger{background:transparent;color:var(--warn);border-color:var(--warn);flex:0 0 auto}
+.err{color:var(--warn);font-weight:600;font-size:.9rem}
+.settings{display:grid;gap:12px}
+.note{font-size:.85rem;color:var(--muted)}
+@media (max-width:360px){.stats,.tests{grid-template-columns:1fr}}
+@media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="top">
+    <h1>השיעורים שלי</h1>
+    <span class="sync" id="sync">טוען…</span>
+  </header>
+  <nav class="tabs" role="tablist">
+    <button role="tab" id="tab-dash" aria-selected="true" data-tab="dash">מצב</button>
+    <button role="tab" id="tab-lessons" aria-selected="false" data-tab="lessons">שיעורים</button>
+    <button role="tab" id="tab-tests" aria-selected="false" data-tab="tests">טסטים ותשלום</button>
+  </nav>
+  <section class="view" id="view-dash"></section>
+  <section class="view" id="view-lessons" hidden></section>
+  <section class="view" id="view-tests" hidden></section>
+</div>
+<button class="fab" id="fab" type="button">+ שיעור חדש</button>
+<div id="sheetHost"></div>
+
+<script>
+(function(){
+const HE_M=["ינו׳","פבר׳","מרץ","אפר׳","מאי","יוני","יולי","אוג׳","ספט׳","אוק׳","נוב׳","דצמ׳"];
+const HE_MF=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
+const HE_D=["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
+const S={lessons:Object.create(null),tests:Object.create(null),settings:{price:200,target:28,regFee:200,regPaid:false},ready:{l:false,t:false,s:false},mode:"loading"};
+let tab="dash", persistOK=true;
+try{localStorage.setItem("driving-lessons:probe","1");localStorage.removeItem("driving-lessons:probe")}catch(e){persistOK=false}
+const $=id=>document.getElementById(id);
+const esc=s=>String(s??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const money=n=>"₪"+Math.round(n).toLocaleString("he-IL");
+const todayISO=()=>{const d=new Date();return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")};
+const parse=iso=>{const [y,m,d]=iso.split("-").map(Number);return new Date(y,m-1,d)};
+const fmt=iso=>{if(!iso)return "";const [y,m,d]=iso.split("-");return d+"/"+m+"/"+y};
+const dayName=iso=>"יום "+HE_D[parse(iso).getDay()];
+const daysUntil=iso=>Math.round((parse(iso)-parse(todayISO()))/864e5);
+const rel=n=>n===0?"היום":n===1?"מחר":n===2?"מחרתיים":n>0?"בעוד "+n+" ימים":n===-1?"אתמול":"לפני "+(-n)+" ימים";
+
+/* ---------- storage ---------- */
+function localLoad(){try{const r=localStorage.getItem("driving-lessons:records:v1");if(r){const o=JSON.parse(r);Object.assign(S.lessons,o.lessons||{});Object.assign(S.tests,o.tests||{});Object.assign(S.settings,o.settings||{});}}catch(e){}}
+function localSave(){try{localStorage.setItem("driving-lessons:records:v1",JSON.stringify({lessons:S.lessons,tests:S.tests,settings:S.settings}))}catch(e){persistOK=false}}
+async function saveLesson(id,data){
+  id=id||crypto.randomUUID(); S.lessons[id]=data; localSave(); render();
+}
+async function delLesson(id){delete S.lessons[id];localSave();render()}
+async function saveTest(kind,data){S.tests[kind]=data;localSave();render()}
+async function saveSettings(data){S.settings=data;localSave();render()}
+
+const isRecord = value => value && typeof value === "object" && !Array.isArray(value);
+const isDate = value => typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value);
+const isTime = value => value === undefined || value === "" || (typeof value === "string" && /^([01]\d|2[0-3]):[0-5]\d$/.test(value));
+const isAmount = value => typeof value === "number" && Number.isFinite(value) && value >= 0;
+function restoreBackup(backup){
+  if(!isRecord(backup)||!isRecord(backup.lessons)) throw Error("invalid backup");
+  const lessons = Object.entries(backup.lessons);
+  if(lessons.some(([id,row])=>!id||!isRecord(row)||!isDate(row.date)||!isTime(row.time)||
+    !["single","double"].includes(row.kind)||typeof row.done!=="boolean"||typeof row.paid!=="boolean")) throw Error("invalid lesson");
+  if(backup.tests!==undefined&&!isRecord(backup.tests)) throw Error("invalid tests");
+  const tests = Object.entries(backup.tests||{});
+  if(tests.some(([id,row])=>!["theory","internal","external"].includes(id)||!isRecord(row)||
+    (row.date!==""&&!isDate(row.date))||!isTime(row.time)||!isAmount(row.cost)||
+    !["","pass","fail"].includes(row.result)||typeof row.paid!=="boolean")) throw Error("invalid exam");
+  if(backup.settings!==undefined&&!isRecord(backup.settings)) throw Error("invalid settings");
+  const settings = {...S.settings};
+  for(const name of ["price","target","regFee","regPaid"]){
+    if(!Object.hasOwn(backup.settings||{},name)) continue;
+    const value=backup.settings[name];
+    if(name==="regPaid"?typeof value!=="boolean":!isAmount(value)||(name==="target"&&(!Number.isInteger(value)||value>1000))) throw Error("invalid setting");
+    settings[name]=value;
+  }
+  for(const [id,{date,time,kind,done,paid}] of lessons) S.lessons[id]={date,time,kind,done,paid};
+  for(const [id,{date,time,cost,result,paid}] of tests) S.tests[id]={date,time,cost,result,paid};
+  S.settings=settings;
+  localSave();render();
+}
+
+/* ---------- derived ---------- */
+function computed(){
+  const ls=Object.entries(S.lessons).map(([id,v])=>({id,...v})).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
+  let n=0;
+  ls.forEach(l=>{l.units=l.kind==="double"?2:1;l.from=n+1;n+=l.units;l.to=n;l.cost=l.units*S.settings.price});
+  const done=ls.filter(l=>l.done), plan=ls.filter(l=>!l.done);
+  const doneUnits=done.reduce((s,l)=>s+l.units,0), planUnits=plan.reduce((s,l)=>s+l.units,0);
+  const paidLessons=ls.filter(l=>l.paid).reduce((s,l)=>s+l.cost,0);
+  const owed=done.filter(l=>!l.paid).reduce((s,l)=>s+l.cost,0);
+  const planCost=plan.filter(l=>!l.paid).reduce((s,l)=>s+l.cost,0);
+  const testsPaid=["theory","internal","external"].reduce((s,k)=>s+((S.tests[k]&&S.tests[k].paid)?(+S.tests[k].cost||0):0),0);
+  const testsDue=["theory","internal","external"].reduce((s,k)=>s+((S.tests[k]&&!S.tests[k].paid&&S.tests[k].date)?(+S.tests[k].cost||0):0),0);
+  const totalPaid=paidLessons+(S.settings.regPaid?(+S.settings.regFee||0):0)+testsPaid;
+  const t=todayISO();
+  const next=plan.find(l=>l.date>=t)||null;
+  const overdue=plan.filter(l=>l.date<t);
+  return {ls,done,plan,doneUnits,planUnits,paidLessons,owed,planCost,totalPaid,testsDue,next,overdue,totalUnits:n};
+}
+
+/* ---------- render ---------- */
+function render(){
+  const ready=S.mode==="local"||(S.ready.l&&S.ready.t&&S.ready.s);
+  $("sync").textContent=S.mode==="db"?"נשמר בענן":S.mode==="local"?(persistOK?"נשמר במכשיר הזה":"לא נשמר, צור גיבוי"):"טוען…";
+  const C=computed();
+  renderDash(C,ready); renderLessons(C,ready); renderTests(C);
+}
+function renderDash(C,ready){
+  const target=Math.max(Math.min(+S.settings.target||0,1000),C.totalUnits);
+  const left=Math.max(0,(+S.settings.target||0)-C.doneUnits);
+  const hrs=C.doneUnits*40/60;
+  let cells="";
+  for(let i=1;i<=target;i++){const cls=i<=C.doneUnits?"done":i<=C.totalUnits?"plan":"";cells+=`<div class="cell ${cls}" title="שיעור ${i}"></div>`}
+  let nextHtml;
+  if(C.next){const d=parse(C.next.date);
+    nextHtml=`<div class="card next"><div class="cal" aria-hidden="true"><div class="m">${HE_M[d.getMonth()]}</div><div class="d num">${d.getDate()}</div></div>
+    <div class="info"><span class="label">השיעור הבא</span><h3>${dayName(C.next.date)}, ${rel(daysUntil(C.next.date))}${C.next.time?" ב־"+esc(C.next.time):""}</h3>
+    <span class="muted">שיעור ${C.next.units===2?C.next.from+"–"+C.next.to+" · כפול, 80 דק׳":C.next.from+" · יחיד, 40 דק׳"}</span></div></div>`;
+  } else nextHtml=`<div class="card"><span class="label">השיעור הבא</span><p class="muted" style="margin:6px 0 0">אין שיעור קבוע. לחץ על "שיעור חדש" כדי לקבוע.</p></div>`;
+  const overdueHtml=C.overdue.length?`<div class="card" style="border-color:var(--warn)"><b>${C.overdue.length===1?"שיעור אחד עבר":C.overdue.length+" שיעורים עברו"} ועדיין לא סומן כבוצע</b><p class="muted" style="margin:4px 0 0">פתח את לשונית השיעורים וסמן אותם.</p></div>`:"";
+  const tcard=(k,name)=>{const t=S.tests[k]||{};const st=t.result==="pass"?"passed":t.result==="fail"?"failed":t.date?"set":"";
+    const when=t.date?`${fmt(t.date)}${t.time?" · "+esc(t.time):""}`:"לא נקבע";
+    const sub=t.result==="pass"?"עברת":t.result==="fail"?"לא עבר":t.date?rel(daysUntil(t.date)):"קבע תאריך בלשונית טסטים";
+    return `<div class="test ${st}"><span class="label">${name}</span><span class="when">${when}</span><span class="muted" style="font-size:.85rem">${sub}</span></div>`};
+  const persistWarn=(S.mode==="local"&&!persistOK)?`<div class="card warn-card"><b>הדפדפן לא מאפשר שמירה במכשיר</b><p class="muted" style="margin:4px 0 0">הנתונים יישארו רק כל עוד העמוד פתוח. בלשונית "טסטים ותשלום" יש כפתור גיבוי. העתק אותו ושמור בוואטסאפ לעצמך.</p></div>`:"";
+  $("view-dash").innerHTML=!ready?`<div class="empty">טוען את השיעורים…</div>`:(C.ls.length===0?`<div class="card empty"><h2 style="font-size:1.15rem;color:var(--ink)">עוד אין שיעורים</h2><p>הוסף את השיעור הראשון בכפתור הצהוב למטה. כל שיעור יכול להיות יחיד (40 דק׳) או כפול (80 דק׳).</p></div>`:"")+(ready&&C.ls.length?`
+    <div class="plate-wrap"><div class="plate" role="img" aria-label="${C.doneUnits} שיעורים בוצעו מתוך ${target}"><div class="il">IL<br>ל</div><div class="digits">${String(C.doneUnits).padStart(2,"0")}<small> / ${target}</small></div></div>
+    <div class="plate-sub">שיעורים שבוצעו · ${hrs%1?hrs.toFixed(1):hrs} שעות נהיגה${left?` · עוד ${left} ליעד`:""}</div></div>
+    <div class="card"><div class="strip" aria-hidden="true">${cells}</div>
+    <div class="legend"><span><i style="background:var(--ink);border-color:var(--ink)"></i>בוצע</span><span><i style="background:var(--plan-bg);border-color:var(--plan)"></i>קבוע</span><span><i></i>עד היעד</span></div></div>
+    ${overdueHtml}${nextHtml}`:"")+(ready?`
+    <div class="stats">
+      <div class="stat good"><span>שולם עד עכשיו</span><b>${money(C.totalPaid)}</b><span>כולל הרשמה וטסטים</span></div>
+      <div class="stat ${C.owed?"owed":""}"><span>חוב על שיעורים שבוצעו</span><b>${money(C.owed)}</b><span>${C.owed?"שיעורים שבוצעו ולא שולמו":"הכול מסודר"}</span></div>
+      <div class="stat"><span>קבועים ועוד לא שולמו</span><b>${money(C.planCost)}</b><span>${C.planUnits===1?"שיעור אחד בהמשך":C.planUnits+" שיעורים בהמשך"}</span></div>
+      <div class="stat"><span>מחיר לשיעור 40 דק׳</span><b>${money(S.settings.price)}</b><span>כפול: ${money(S.settings.price*2)}</span></div>
+    </div>
+    <div class="tests" style="grid-template-columns:1fr">${tcard("theory","תיאוריה")}</div>
+    <div class="tests">${tcard("internal","טסט פנימי")}${tcard("external","טסט חיצוני")}</div>`:"");
+  $("view-dash").innerHTML=persistWarn+$("view-dash").innerHTML;
+}
+function renderLessons(C,ready){
+  if(!ready){$("view-lessons").innerHTML=`<div class="empty">טוען…</div>`;return}
+  const items=C.ls.map(l=>({type:"l",date:l.date,time:l.time||"",l}));
+  /* tests and theory are shown in the status and tests tabs, not here */
+  items.sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  if(!items.length){$("view-lessons").innerHTML=`<div class="card empty">אין שיעורים עדיין. הוסף שיעור בכפתור הצהוב.</div>`;return}
+  let html="",lastM="";
+  items.forEach(it=>{
+    const d=parse(it.date),mk=d.getFullYear()+"-"+d.getMonth();
+    if(mk!==lastM){html+=`<div class="month">${HE_MF[d.getMonth()]} ${d.getFullYear()}</div>`;lastM=mk}
+    if(it.type==="t"){
+      const r=it.t.result==="pass"?`<span class="chip ok">עבר</span>`:it.t.result==="fail"?`<span class="chip warn">לא עבר</span>`:`<span class="chip plan">${rel(daysUntil(it.date))}</span>`;
+      html+=`<button class="row test-row" data-test="${it.k}" type="button"><span class="no">טסט</span><span class="mid"><span class="date">${it.n} · ${fmt(it.date)}${it.t.time?" · "+esc(it.t.time):""}</span><span class="chips">${r}</span></span><span class="price muted">${it.t.cost?money(it.t.cost):""}</span></button>`;
+      return;
+    }
+    const l=it.l, isPast=l.date<todayISO();
+    const st=l.done?`<span class="chip ok">בוצע</span>`:isPast?`<span class="chip warn">לסמן כבוצע</span>`:`<span class="chip plan">${rel(daysUntil(l.date))}</span>`;
+    const pay=l.paid?`<span class="chip ok">שולם</span>`:(l.done?`<span class="chip warn">לא שולם</span>`:`<span class="chip">לא שולם</span>`);
+    html+=`<button class="row" data-id="${esc(l.id)}" type="button"><span class="no">${l.units===2?l.from+"–"+l.to:l.from}</span>
+      <span class="mid"><span class="date">${dayName(l.date)} ${fmt(l.date)}${l.time?" · "+esc(l.time):""}</span>
+      <span class="chips"><span class="chip">${l.units===2?"כפול 80 דק׳":"יחיד 40 דק׳"}</span>${st}${pay}</span></span>
+      <span class="price">${money(l.cost)}</span></button>`;
+  });
+  $("view-lessons").innerHTML=`<div class="list">${html}</div>`;
+}
+function renderTests(C){
+  const tblock=(k,name)=>{const t=S.tests[k]||{};
+    return `<div class="card settings" data-tblock="${k}"><h2 style="font-size:1.1rem">${name}</h2>
+    <div class="two"><div class="field"><label for="${k}-date">תאריך</label><input type="date" id="${k}-date" value="${esc(t.date||"")}"></div>
+    <div class="field"><label for="${k}-time">שעה</label><input type="time" id="${k}-time" value="${esc(t.time||"")}"></div></div>
+    <div class="two"><div class="field"><label for="${k}-cost">עלות (₪)</label><input type="number" inputmode="numeric" id="${k}-cost" value="${esc(t.cost??"")}" placeholder="0"></div>
+    <div class="field"><label for="${k}-result">תוצאה</label><select id="${k}-result"><option value="">עוד לא נעשה</option><option value="pass" ${t.result==="pass"?"selected":""}>עבר</option><option value="fail" ${t.result==="fail"?"selected":""}>לא עבר</option></select></div></div>
+    <label class="tg"><input type="checkbox" id="${k}-paid" ${t.paid?"checked":""}> שולם</label>
+    <div class="actions"><button class="btn" type="button" data-savetest="${k}">שמור ${name}</button>${t.date?`<button class="btn danger" type="button" data-cleartest="${k}">בטל</button>`:""}</div></div>`};
+  const s=S.settings;
+  $("view-tests").innerHTML=tblock("theory","תיאוריה")+tblock("internal","טסט פנימי")+tblock("external","טסט חיצוני")+`
+  <div class="card settings"><h2 style="font-size:1.1rem">מחיר והרשמה</h2>
+    <div class="two"><div class="field"><label for="set-price">מחיר שיעור 40 דק׳ (₪)</label><input type="number" inputmode="numeric" id="set-price" value="${esc(s.price)}"></div>
+    <div class="field"><label for="set-target">יעד שיעורים</label><input type="number" inputmode="numeric" id="set-target" value="${esc(s.target)}"></div></div>
+    <div class="two"><div class="field"><label for="set-reg">דמי הרשמה (₪)</label><input type="number" inputmode="numeric" id="set-reg" value="${esc(s.regFee)}"></div>
+    <label class="tg" style="align-self:end"><input type="checkbox" id="set-regpaid" ${s.regPaid?"checked":""}> הרשמה שולמה</label></div>
+    <p class="note">שיעור כפול נספר כשני שיעורים ועולה פעמיים המחיר.</p>
+    <div class="actions"><button class="btn" type="button" id="saveSettings">שמור</button></div></div>
+  <div class="card settings"><h2 style="font-size:1.1rem">גיבוי</h2>
+    <p class="note">לחץ "צור גיבוי", העתק את הטקסט ושמור אותו בוואטסאפ לעצמך. אם הנתונים יימחקו, הדבק את הטקסט בתיבה ולחץ "שחזר".</p>
+    <div class="field"><label for="bk-text">טקסט הגיבוי</label><textarea id="bk-text" rows="4"></textarea></div>
+    <div class="actions"><button class="btn" type="button" id="bk-copy">צור גיבוי</button><button class="btn ghost" type="button" id="bk-restore">שחזר</button></div>
+    <p class="note" id="bk-msg" aria-live="polite"></p></div>`;
+}
+
+/* ---------- sheet (add / edit lesson) ---------- */
+function openSheet(id){
+  const l=id?S.lessons[id]:{date:todayISO(),time:"",kind:"double",done:false,paid:false};
+  let kind=l.kind||"double";
+  $("sheetHost").innerHTML=`<div class="overlay" id="ov"><div class="sheet" role="dialog" aria-modal="true" aria-labelledby="sh-t">
+    <h2 id="sh-t">${id?"עריכת שיעור":"שיעור חדש"}</h2>
+    <div class="seg" role="group" aria-label="סוג שיעור"><button type="button" data-kind="single" aria-pressed="${kind==="single"}">יחיד<small>40 דק׳ · ${money(S.settings.price)}</small></button><button type="button" data-kind="double" aria-pressed="${kind==="double"}">כפול<small>80 דק׳ · ${money(S.settings.price*2)}</small></button></div>
+    <div class="two"><div class="field"><label for="f-date">תאריך</label><input type="date" id="f-date" value="${esc(l.date)}"></div>
+    <div class="field"><label for="f-time">שעה</label><input type="time" id="f-time" value="${esc(l.time||"")}"></div></div>
+    <div class="toggles"><label class="tg"><input type="checkbox" id="f-done" ${l.done?"checked":""}> בוצע</label><label class="tg"><input type="checkbox" id="f-paid" ${l.paid?"checked":""}> שולם</label></div>
+    <p class="err" id="f-err" hidden></p>
+    <div class="actions"><button class="btn" type="button" id="f-save">${id?"שמור שינויים":"הוסף שיעור"}</button><button class="btn ghost" type="button" id="f-cancel">ביטול</button>${id?`<button class="btn danger" type="button" id="f-del">מחק</button>`:""}</div>
+  </div></div>`;
+  const ov=$("ov");
+  ov.addEventListener("click",async e=>{
+    if(e.target===ov||e.target.id==="f-cancel"){close();return}
+    const kb=e.target.closest("[data-kind]");
+    if(kb){kind=kb.dataset.kind;ov.querySelectorAll("[data-kind]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.kind===kind))}
+    if(e.target.id==="f-del"){
+      if(e.target.dataset.armed){await run(()=>delLesson(id));}
+      else{e.target.dataset.armed="1";e.target.textContent="לחץ שוב למחיקה"}
+    }
+    if(e.target.id==="f-save"){
+      const date=$("f-date").value;
+      if(!date){const er=$("f-err");er.textContent="בחר תאריך לשיעור.";er.hidden=false;return}
+      await run(()=>saveLesson(id,{date,time:$("f-time").value||"",kind,done:$("f-done").checked,paid:$("f-paid").checked}));
+    }
+  });
+  async function run(fn){try{await fn();close()}catch(err){const er=$("f-err");er.textContent="השמירה נכשלה. בדוק חיבור ונסה שוב.";er.hidden=false}}
+  function close(){$("sheetHost").innerHTML=""}
+}
+
+/* ---------- events ---------- */
+function setTab(t){tab=t;["dash","lessons","tests"].forEach(x=>{$("view-"+x).hidden=x!==t;$("tab-"+x).setAttribute("aria-selected",x===t)});$("fab").hidden=t==="tests";try{localStorage.setItem("driving-lessons:tab",t)}catch(e){}}
+document.querySelector("nav.tabs").addEventListener("click",e=>{const b=e.target.closest("[data-tab]");if(b)setTab(b.dataset.tab)});
+$("fab").addEventListener("click",()=>openSheet(null));
+$("view-lessons").addEventListener("click",e=>{const r=e.target.closest("[data-id]");if(r)openSheet(r.dataset.id);const t=e.target.closest("[data-test]");if(t)setTab("tests")});
+$("view-tests").addEventListener("click",async e=>{
+  const k=e.target.dataset.savetest, c=e.target.dataset.cleartest;
+  if(k){const btn=e.target;btn.disabled=true;try{await saveTest(k,{date:$(k+"-date").value||"",time:$(k+"-time").value||"",cost:+$(k+"-cost").value||0,result:$(k+"-result").value||"",paid:$(k+"-paid").checked});btn.textContent="נשמר"}catch(err){btn.textContent="השמירה נכשלה";btn.disabled=false}}
+  if(c){await saveTest(c,{date:"",time:"",cost:0,result:"",paid:false})}
+  if(e.target.id==="bk-copy"){
+    const txt=JSON.stringify({lessons:S.lessons,tests:S.tests,settings:S.settings});
+    const ta=$("bk-text");ta.value=txt;ta.focus();ta.select();
+    let ok=false;try{await navigator.clipboard.writeText(txt);ok=true}catch(err){}
+    $("bk-msg").textContent=ok?"הגיבוי הועתק. הדבק אותו בוואטסאפ לעצמך.":"סמן את כל הטקסט בתיבה, העתק אותו ושמור בוואטסאפ לעצמך."
+  }
+  if(e.target.id==="bk-restore"){
+    let o=null;try{o=JSON.parse($("bk-text").value)}catch(err){}
+    if(!o||typeof o.lessons!=="object"||!o.lessons){$("bk-msg").textContent="הטקסט לא נראה כמו גיבוי. הדבק את כל הטקסט ונסה שוב.";return}
+    try{
+      restoreBackup(o);
+      $("bk-msg").textContent="הנתונים שוחזרו."
+    }catch(err){$("bk-msg").textContent="השחזור נכשל. נסה שוב."}
+  }
+  if(e.target.id==="saveSettings"){const b=e.target;b.disabled=true;try{await saveSettings({price:+$("set-price").value||0,target:+$("set-target").value||0,regFee:+$("set-reg").value||0,regPaid:$("set-regpaid").checked});b.textContent="נשמר"}catch(err){b.textContent="השמירה נכשלה";b.disabled=false}}
+});
+try{const t=localStorage.getItem("driving-lessons:tab");if(["dash","lessons","tests"].includes(t))setTab(t)}catch(e){}
+if(location.hash==="#lessons"||location.hash==="#tests")setTab(location.hash.slice(1));
+
+/* ---------- boot ---------- */
+S.mode="local";
+localLoad();
+render();
+if("serviceWorker" in navigator){
+  navigator.serviceWorker.register("./sw.js",{scope:"./"}).catch(console.error);
+}
+})();
+</script>
+</body>
+</html>
