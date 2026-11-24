@@ -1,6 +1,6 @@
 const scope = new URL(self.registration.scope);
 const prefix = 'driving-lessons:' + scope.href + ':';
-const cacheName = prefix + 'v1';
+const cacheName = prefix + 'v2';
 const home = new URL('./', scope).href;
 const assets = ['index.html', 'manifest.json', 'icon-192.png', 'icon-512.png'].map(path => new URL(path, scope).href);
 

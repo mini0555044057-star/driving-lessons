@@ -126,6 +126,9 @@ textarea{font:.8rem ui-monospace,Menlo,monospace;direction:ltr;padding:10px 12px
 .btn.danger{background:transparent;color:var(--warn);border-color:var(--warn);flex:0 0 auto}
 .err{color:var(--warn);font-weight:600;font-size:.9rem}
 .settings{display:grid;gap:12px}
+.attempt{display:grid;grid-template-columns:1fr auto;gap:4px 10px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line)}
+.attempt .chips{grid-column:1}
+.attempt-edit{grid-column:2;grid-row:1 / span 2;border:1px solid var(--line);border-radius:999px;background:var(--surface);color:var(--ink);font:700 .85rem var(--body);padding:6px 12px;cursor:pointer}
 .note{font-size:.85rem;color:var(--muted)}
 @media (max-width:360px){.stats,.tests{grid-template-columns:1fr}}
 @media (prefers-reduced-motion:no-preference){.sheet{animation:up .18s ease-out}@keyframes up{from{transform:translateY(24px);opacity:.6}}}
@@ -155,6 +158,9 @@ const HE_M=["ינו׳","פבר׳","מרץ","אפר׳","מאי","יוני","יו�
 const HE_MF=["ינואר","פברואר","מרץ","אפריל","מאי","יוני","יולי","אוגוסט","ספטמבר","אוקטובר","נובמבר","דצמבר"];
 const HE_D=["ראשון","שני","שלישי","רביעי","חמישי","שישי","שבת"];
 const S={lessons:Object.create(null),tests:Object.create(null),settings:{price:200,target:28,regFee:200,regPaid:false},ready:{l:false,t:false,s:false},mode:"loading"};
+const TEST_TYPES=["theory","internal","external"];
+const RECORDS_KEY="driving-lessons:records:v2";
+const testEditors=Object.create(null);
 let tab="dash", persistOK=true;
 try{localStorage.setItem("driving-lessons:probe","1");localStorage.removeItem("driving-lessons:probe")}catch(e){persistOK=false}
 const $=id=>document.getElementById(id);
@@ -168,13 +174,42 @@ const daysUntil=iso=>Math.round((parse(iso)-parse(todayISO()))/864e5);
 const rel=n=>n===0?"היום":n===1?"מחר":n===2?"מחרתיים":n>0?"בעוד "+n+" ימים":n===-1?"אתמול":"לפני "+(-n)+" ימים";
 
 /* ---------- storage ---------- */
-function localLoad(){try{const r=localStorage.getItem("driving-lessons:records:v1");if(r){const o=JSON.parse(r);Object.assign(S.lessons,o.lessons||{});Object.assign(S.tests,o.tests||{});Object.assign(S.settings,o.settings||{});}}catch(e){}}
-function localSave(){try{localStorage.setItem("driving-lessons:records:v1",JSON.stringify({lessons:S.lessons,tests:S.tests,settings:S.settings}))}catch(e){persistOK=false}}
+function localLoad(){
+  try{
+    const r=localStorage.getItem(RECORDS_KEY)??localStorage.getItem("driving-lessons:records:v1");
+    if(!r)return;
+    const o=JSON.parse(r);
+    Object.assign(S.lessons,o.lessons||{});
+    for(const kind of TEST_TYPES) S.tests[kind]=readAttempts(kind,o.tests?.[kind]);
+    Object.assign(S.settings,o.settings||{});
+  }catch(e){}
+}
+function localSave(){try{localStorage.setItem(RECORDS_KEY,JSON.stringify({lessons:S.lessons,tests:S.tests,settings:S.settings}))}catch(e){persistOK=false}}
 async function saveLesson(id,data){
   id=id||crypto.randomUUID(); S.lessons[id]=data; localSave(); render();
 }
 async function delLesson(id){delete S.lessons[id];localSave();render()}
-async function saveTest(kind,data){S.tests[kind]=data;localSave();render()}
+function attempts(kind){return S.tests[kind]||[]}
+function readAttempts(kind,value){
+  if(value===undefined)return [];
+  if(Array.isArray(value))return value;
+  if(!isRecord(value))throw Error("invalid exam");
+  return value.date||value.time||value.cost||value.result||value.paid?[{...value,id:"legacy-"+kind}]:[];
+}
+function saveTest(kind,id,data){
+  const list=attempts(kind);
+  const index=list.findIndex(row=>row.id===id);
+  if(index<0) S.tests[kind]=[...list,{...data,id:crypto.randomUUID()}];
+  else list[index]={...data,id};
+  delete testEditors[kind];
+  localSave();render();
+}
+function currentTest(kind){
+  const list=attempts(kind);
+  const upcoming=list.filter(row=>!row.result&&row.date&&row.date>=todayISO());
+  upcoming.sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")));
+  return upcoming[0]||list[list.length-1];
+}
 async function saveSettings(data){S.settings=data;localSave();render()}
 
 const isRecord = value => value && typeof value === "object" && !Array.isArray(value);
@@ -187,10 +222,18 @@ function restoreBackup(backup){
   if(lessons.some(([id,row])=>!id||!isRecord(row)||!isDate(row.date)||!isTime(row.time)||
     !["single","double"].includes(row.kind)||typeof row.done!=="boolean"||typeof row.paid!=="boolean")) throw Error("invalid lesson");
   if(backup.tests!==undefined&&!isRecord(backup.tests)) throw Error("invalid tests");
-  const tests = Object.entries(backup.tests||{});
-  if(tests.some(([id,row])=>!["theory","internal","external"].includes(id)||!isRecord(row)||
-    (row.date!==""&&!isDate(row.date))||!isTime(row.time)||!isAmount(row.cost)||
-    !["","pass","fail"].includes(row.result)||typeof row.paid!=="boolean")) throw Error("invalid exam");
+  const tests = Object.entries(backup.tests||{}).map(([kind,value])=>{
+    if(!TEST_TYPES.includes(kind))throw Error("invalid exam type");
+    const rows=readAttempts(kind,value);
+    const ids=new Set();
+    for(const row of rows){
+      if(!isRecord(row)||typeof row.id!=="string"||!row.id||ids.has(row.id)||
+        (row.date!==""&&!isDate(row.date))||!isTime(row.time)||!isAmount(row.cost)||
+        !["","pass","fail"].includes(row.result)||typeof row.paid!=="boolean")throw Error("invalid exam");
+      ids.add(row.id);
+    }
+    return [kind,rows];
+  });
   if(backup.settings!==undefined&&!isRecord(backup.settings)) throw Error("invalid settings");
   const settings = {...S.settings};
   for(const name of ["price","target","regFee","regPaid"]){
@@ -200,7 +243,12 @@ function restoreBackup(backup){
     settings[name]=value;
   }
   for(const [id,{date,time,kind,done,paid}] of lessons) S.lessons[id]={date,time,kind,done,paid};
-  for(const [id,{date,time,cost,result,paid}] of tests) S.tests[id]={date,time,cost,result,paid};
+  for(const [kind,rows] of tests){
+    const merged=new Map(attempts(kind).map(row=>[row.id,row]));
+    for(const {id,date,time,cost,result,paid} of rows) merged.set(id,{id,date,time,cost,result,paid});
+    S.tests[kind]=[...merged.values()];
+    delete testEditors[kind];
+  }
   S.settings=settings;
   localSave();render();
 }
@@ -215,8 +263,9 @@ function computed(){
   const paidLessons=ls.filter(l=>l.paid).reduce((s,l)=>s+l.cost,0);
   const owed=done.filter(l=>!l.paid).reduce((s,l)=>s+l.cost,0);
   const planCost=plan.filter(l=>!l.paid).reduce((s,l)=>s+l.cost,0);
-  const testsPaid=["theory","internal","external"].reduce((s,k)=>s+((S.tests[k]&&S.tests[k].paid)?(+S.tests[k].cost||0):0),0);
-  const testsDue=["theory","internal","external"].reduce((s,k)=>s+((S.tests[k]&&!S.tests[k].paid&&S.tests[k].date)?(+S.tests[k].cost||0):0),0);
+  const exams=TEST_TYPES.flatMap(attempts);
+  const testsPaid=exams.filter(row=>row.paid).reduce((sum,row)=>sum+row.cost,0);
+  const testsDue=exams.filter(row=>!row.paid&&row.date).reduce((sum,row)=>sum+row.cost,0);
   const totalPaid=paidLessons+(S.settings.regPaid?(+S.settings.regFee||0):0)+testsPaid;
   const t=todayISO();
   const next=plan.find(l=>l.date>=t)||null;
@@ -244,7 +293,7 @@ function renderDash(C,ready){
     <span class="muted">שיעור ${C.next.units===2?C.next.from+"–"+C.next.to+" · כפול, 80 דק׳":C.next.from+" · יחיד, 40 דק׳"}</span></div></div>`;
   } else nextHtml=`<div class="card"><span class="label">השיעור הבא</span><p class="muted" style="margin:6px 0 0">אין שיעור קבוע. לחץ על "שיעור חדש" כדי לקבוע.</p></div>`;
   const overdueHtml=C.overdue.length?`<div class="card" style="border-color:var(--warn)"><b>${C.overdue.length===1?"שיעור אחד עבר":C.overdue.length+" שיעורים עברו"} ועדיין לא סומן כבוצע</b><p class="muted" style="margin:4px 0 0">פתח את לשונית השיעורים וסמן אותם.</p></div>`:"";
-  const tcard=(k,name)=>{const t=S.tests[k]||{};const st=t.result==="pass"?"passed":t.result==="fail"?"failed":t.date?"set":"";
+  const tcard=(k,name)=>{const t=currentTest(k)||{};const st=t.result==="pass"?"passed":t.result==="fail"?"failed":t.date?"set":"";
     const when=t.date?`${fmt(t.date)}${t.time?" · "+esc(t.time):""}`:"לא נקבע";
     const sub=t.result==="pass"?"עברת":t.result==="fail"?"לא עבר":t.date?rel(daysUntil(t.date)):"קבע תאריך בלשונית טסטים";
     return `<div class="test ${st}"><span class="label">${name}</span><span class="when">${when}</span><span class="muted" style="font-size:.85rem">${sub}</span></div>`};
@@ -291,14 +340,35 @@ function renderLessons(C,ready){
   $("view-lessons").innerHTML=`<div class="list">${html}</div>`;
 }
 function renderTests(C){
-  const tblock=(k,name)=>{const t=S.tests[k]||{};
-    return `<div class="card settings" data-tblock="${k}"><h2 style="font-size:1.1rem">${name}</h2>
+  const tblock=(k,name)=>{
+    const list=attempts(k), latest=list[list.length-1];
+    const pending=list.find(row=>!row.result);
+    const canRetry=latest?.result==="fail"&&!pending;
+    const editor=testEditors[k]??pending?.id;
+    const t=list.find(row=>row.id===editor)||{};
+    const showForm=!list.length||editor!==undefined;
+    const rows=list.map((row,index)=>{
+      const status=row.result==="pass"?"עבר":row.result==="fail"?"לא עבר":row.date?"נקבע":"טרם נקבע";
+      const chip=row.result==="pass"?"ok":row.result==="fail"?"warn":"plan";
+      return `<div class="attempt">
+        <div><b>ניסיון ${index+1}</b> · ${row.date?fmt(row.date):"ללא תאריך"}${row.time?" · "+esc(row.time):""}</div>
+        <div class="chips"><span class="chip ${chip}">${status}</span><span class="chip">${money(row.cost)}</span><span class="chip ${row.paid?"ok":""}">${row.paid?"שולם":"טרם שולם"}</span></div>
+        ${row.id!==editor?`<button class="attempt-edit" type="button" data-edittest="${k}" data-attempt="${esc(row.id)}" aria-label="עריכת ניסיון ${index+1} של ${name}">עריכה</button>`:""}
+      </div>`;
+    }).join("");
+    const retry=canRetry&&editor===undefined?`<div class="actions"><button class="btn" type="button" data-retrytest="${k}">קבע ניסיון נוסף</button></div>`:"";
+    const form=showForm?`
     <div class="two"><div class="field"><label for="${k}-date">תאריך</label><input type="date" id="${k}-date" value="${esc(t.date||"")}"></div>
     <div class="field"><label for="${k}-time">שעה</label><input type="time" id="${k}-time" value="${esc(t.time||"")}"></div></div>
-    <div class="two"><div class="field"><label for="${k}-cost">עלות (₪)</label><input type="number" inputmode="numeric" id="${k}-cost" value="${esc(t.cost??"")}" placeholder="0"></div>
+    <div class="two"><div class="field"><label for="${k}-cost">עלות (₪)</label><input type="number" min="0" inputmode="numeric" id="${k}-cost" value="${esc(t.cost??"")}" placeholder="0"></div>
     <div class="field"><label for="${k}-result">תוצאה</label><select id="${k}-result"><option value="">עוד לא נעשה</option><option value="pass" ${t.result==="pass"?"selected":""}>עבר</option><option value="fail" ${t.result==="fail"?"selected":""}>לא עבר</option></select></div></div>
     <label class="tg"><input type="checkbox" id="${k}-paid" ${t.paid?"checked":""}> שולם</label>
-    <div class="actions"><button class="btn" type="button" data-savetest="${k}">שמור ${name}</button>${t.date?`<button class="btn danger" type="button" data-cleartest="${k}">בטל</button>`:""}</div></div>`};
+    <p class="err" id="${k}-error" role="alert" hidden></p>
+    <div class="actions"><button class="btn" type="button" data-savetest="${k}" data-attempt="${esc(t.id||"")}">${t.id?"שמור שינויים":"שמור "+name}</button>
+    ${testEditors[k]!==undefined?`<button class="btn ghost" type="button" data-canceledit="${k}">ביטול</button>`:""}
+    ${t.id&&!t.result?`<button class="btn danger" type="button" data-cleartest="${k}" data-attempt="${esc(t.id)}">בטל מועד</button>`:""}</div>`:"";
+    return `<div class="card settings" data-tblock="${k}"><h2 style="font-size:1.1rem">${name}</h2>${rows}${retry}${form}</div>`;
+  };
   const s=S.settings;
   $("view-tests").innerHTML=tblock("theory","תיאוריה")+tblock("internal","טסט פנימי")+tblock("external","טסט חיצוני")+`
   <div class="card settings"><h2 style="font-size:1.1rem">מחיר והרשמה</h2>
@@ -353,9 +423,32 @@ document.querySelector("nav.tabs").addEventListener("click",e=>{const b=e.target
 $("fab").addEventListener("click",()=>openSheet(null));
 $("view-lessons").addEventListener("click",e=>{const r=e.target.closest("[data-id]");if(r)openSheet(r.dataset.id);const t=e.target.closest("[data-test]");if(t)setTab("tests")});
 $("view-tests").addEventListener("click",async e=>{
-  const k=e.target.dataset.savetest, c=e.target.dataset.cleartest;
-  if(k){const btn=e.target;btn.disabled=true;try{await saveTest(k,{date:$(k+"-date").value||"",time:$(k+"-time").value||"",cost:+$(k+"-cost").value||0,result:$(k+"-result").value||"",paid:$(k+"-paid").checked});btn.textContent="נשמר"}catch(err){btn.textContent="השמירה נכשלה";btn.disabled=false}}
-  if(c){await saveTest(c,{date:"",time:"",cost:0,result:"",paid:false})}
+  const {savetest,cleartest,edittest,retrytest,canceledit,attempt}=e.target.dataset;
+  if(edittest||retrytest){
+    const kind=edittest||retrytest;
+    testEditors[kind]=edittest?attempt:"";
+    renderTests();
+    $(kind+"-date").focus();
+    return;
+  }
+  if(canceledit){delete testEditors[canceledit];renderTests();return}
+  if(savetest){
+    const k=savetest, date=$(k+"-date").value, cost=Number($(k+"-cost").value);
+    const error=$(k+"-error");
+    if(!date||!isAmount(cost)){
+      error.textContent=!date?"בחר תאריך לניסיון.":"יש להזין עלות של אפס או יותר.";
+      error.hidden=false;
+      return;
+    }
+    saveTest(k,attempt,{date,time:$(k+"-time").value,cost,result:$(k+"-result").value,paid:$(k+"-paid").checked});
+    return;
+  }
+  if(cleartest){
+    S.tests[cleartest]=attempts(cleartest).filter(row=>row.id!==attempt);
+    delete testEditors[cleartest];
+    localSave();render();
+    return;
+  }
   if(e.target.id==="bk-copy"){
     const txt=JSON.stringify({lessons:S.lessons,tests:S.tests,settings:S.settings});
     const ta=$("bk-text");ta.value=txt;ta.focus();ta.select();
